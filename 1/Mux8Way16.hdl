@@ -1,0 +1,66 @@
+// This file is part of www.nand2tetris.org
+// and the book "The Elements of Computing Systems"
+// by Nisan and Schocken, MIT Press.
+// File name: projects/1/Mux8Way16.hdl
+/**
+ * 8-way 16-bit multiplexor:
+ * out = a if sel = 000
+ *       b if sel = 001
+ *       c if sel = 010
+ *       d if sel = 011
+ *       e if sel = 100
+ *       f if sel = 101
+ *       g if sel = 110
+ *       h if sel = 111
+ */
+CHIP Mux8Way16 {
+    IN a[16], b[16], c[16], d[16],
+       e[16], f[16], g[16], h[16],
+       sel[3];
+    OUT out[16];
+
+    PARTS:
+    Not(in=sel[2], out=notsel2);
+    Not(in=sel[1], out=notsel1);
+    Not(in=sel[0], out=notsel0);
+
+    And(a=notsel2, b=notsel1, out=notsel2notsel1);
+    And(a=notsel2, b=sel[1], out=notsel2sel1);
+    And(a=sel[2], b=notsel1, out=sel2notsel1);
+    And(a=sel[2], b=sel[1], out=sel2sel1);
+
+    And(a=notsel2notsel1, b=notsel0, out=notsel2notsel1notsel0);
+    And(a=notsel2notsel1, b=sel[0], out=notsel2notsel1sel0);
+    And(a=notsel2sel1, b=notsel0, out=notsel2sel1notsel0);
+    And(a=notsel2sel1, b=sel[0], out=notsel2sel1sel0);
+    And(a=sel2notsel1, b=notsel0, out=sel2notsel1notsel0);
+    And(a=sel2notsel1, b=sel[0], out=sel2notsel1sel0);
+    And(a=sel2sel1, b=notsel0, out=sel2sel1notsel0);
+    And(a=sel2sel1, b=sel[0], out=sel2sel1sel0);
+
+    Echo16(in=notsel2notsel1notsel0, out=znotsel2notsel1notsel0);
+    Echo16(in=notsel2notsel1sel0, out=znotsel2notsel1sel0);
+    Echo16(in=notsel2sel1notsel0, out=znotsel2sel1notsel0);
+    Echo16(in=notsel2sel1sel0, out=znotsel2sel1sel0);
+    Echo16(in=sel2notsel1notsel0, out=zsel2notsel1notsel0);
+    Echo16(in=sel2notsel1sel0, out=zsel2notsel1sel0);
+    Echo16(in=sel2sel1notsel0, out=zsel2sel1notsel0);
+    Echo16(in=sel2sel1sel0, out=zsel2sel1sel0);
+
+    And16(a=a, b=znotsel2notsel1notsel0, out=x1);
+    And16(a=b ,b=znotsel2notsel1sel0, out=x2);
+    And16(a=c ,b=znotsel2sel1notsel0, out=x3);
+    And16(a=d ,b=znotsel2sel1sel0, out=x4);
+    And16(a=e ,b=zsel2notsel1notsel0, out=x5);
+    And16(a=f ,b=zsel2notsel1sel0, out=x6);
+    And16(a=g ,b=zsel2sel1notsel0, out=x7);
+    And16(a=h ,b=zsel2sel1sel0, out=x8);
+
+    Or16(a=x1, b=x2, out=w1);
+    Or16(a=w1, b=x3, out=w2);
+    Or16(a=w2, b=x4, out=w3);
+    Or16(a=w3, b=x5, out=w4);
+    Or16(a=w4, b=x6, out=w5);
+    Or16(a=w5, b=x7, out=w6);
+    Or16(a=w6, b=x8, out=out);
+}
