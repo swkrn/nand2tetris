@@ -10,7 +10,6 @@
 
 //// Replace this comment with your code.
 
-// NOTE: This code just fills the screen. It does not listen to the keyboard.
 @16384
 D=A
 @0

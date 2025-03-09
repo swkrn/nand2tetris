@@ -8,9 +8,6 @@
 // The algorithm is based on repetitive addition.
 
 //// Replace this comment with your code.
-@2
-M=0
-
 @1
 D=M
 @3
