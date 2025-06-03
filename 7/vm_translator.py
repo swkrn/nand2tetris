@@ -59,7 +59,7 @@ class Parser:
             
 
 class CodeWriter:
-    def __init__(self, output_file_path):
+    def __init__(self, output_file_path: str):
          self.file = open(output_file_path, 'w')
          self.vm_class_name =  re.split(r"[\\/]", output_file_path)[-1].removesuffix('.asm')
          self.label = 0
@@ -222,14 +222,9 @@ class CodeWriter:
                 """));
         
         elif segment == 'static':
-            if segment == 'temp':
-                base_address = 5
-            if segment == 'pointer':
-                base_address = 3
-
             if command == 'C_PUSH':
                 self.file.write(textwrap.dedent(f"""\
-                @{self.vm_class_name}{index}
+                @{self.vm_class_name}.{index}
                 D=M
                 @SP
                 A=M
@@ -243,7 +238,7 @@ class CodeWriter:
                 @SP
                 AM=M-1
                 D=M
-                @{self.vm_class_name}{index}
+                @{self.vm_class_name}.{index}
                 M=D
                 """));
 
@@ -292,18 +287,18 @@ class CodeWriter:
 
 
 if __name__ == '__main__':
-    if len(sys.argv) < 2:
+    if len(sys.argv) != 2:
         print("Usage: python vm_translator.py <filename>")
     else:
-        input_file_name = sys.argv[1]
+        input_file_path = sys.argv[1]
 
-        if input_file_name.endswith('.vm'):
-            output_file_name = f'{input_file_name[:-3]}.asm'
+        if input_file_path.endswith('.vm'):
+            output_file_path = f'{input_file_path[:-3]}.asm'
         else:
             exit(1)
 
-        parser = Parser(input_file_name)
-        writer = CodeWriter(output_file_name)
+        parser = Parser(input_file_path)
+        writer = CodeWriter(output_file_path)
 
         while parser.has_more_commands():
             line = parser.advance()
@@ -313,3 +308,5 @@ if __name__ == '__main__':
                         writer.write_arithmetic(arithmetic=line.arg1)
                     case _:
                         writer.write_push_pop(command=line.command, segment=line.arg1, index=line.arg2)
+
+        writer.close()
