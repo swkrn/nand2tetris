@@ -1,123 +1,203 @@
-from typing import Literal
+from typing import Literal, get_args
 import sys
 import textwrap
+from dataclasses import dataclass
 
 Command = Literal['C_ARITHMETIC', 'C_PUSH', 'C_POP', 'C_LABEL', 'C_GOTO', 'C_IF', 'C_FUNCTION', 'C_RETURN', 'C_CALL']
-Arithmetic = Literal["add", "sub"]
+Arithmetic = Literal["add", "sub", 'eq', 'lt', 'gt', 'neg', 'and', 'or', 'not']
 
-Segment = Literal['local', 'argument', 'this', 'that', 'constant']
-
+Segment = Literal['local', 'argument', 'this', 'that', 'constant', 'temp']
 
 def to_command(command: str) -> Command | None:
-    match command:
-        case 'push':
-            return 'C_PUSH'
-        case 'pop':
-            return 'C_POP'
-        case _:
-            if command in {'add', 'sub'}:
-                return 'C_ARITHMETIC'
-            else:
-                return None
-                
+        match command:
+            case 'push':
+                return 'C_PUSH'
+            case 'pop':
+                return 'C_POP'
+            case _:
+                if command in set(get_args(Arithmetic)):
+                    return 'C_ARITHMETIC'
+                else:
+                    return None
+
+@dataclass              
+class ParsedLine:
+    command: Command
+    arg1: str
+    arg2: int | None
+
 
 class Parser:
     def __init__(self, input_file: str):
-        file = open(input_file, 'r')
-        lines = file.readlines()
+        self.file = open(input_file, 'r')
+        self.lines = self.file.readlines()
+        self.cursor = 0
 
-        writer = None;
-        if input_file.endswith('.vm'):
-            writer = CodeWriter(f'{input_file[:-3]}.asm')
-        else:
-            exit(1)
+    def has_more_commands(self) -> bool:
+        return self.cursor < len(self.lines)
 
-        for line in lines:
-            if line.startswith('//'):
-                continue
-            line_splitted: list[str] = line.split()
-            if len(line_splitted) == 0:
-                continue
+    def advance(self) -> ParsedLine | None:
+        line = self.lines[self.cursor]
+        self.cursor += 1;
 
-            command = to_command(line_splitted[0])
-            arg1 = None
+        if line.startswith('//'):
+            return None
+        line_splitted: list[str] = line.split()
+        if len(line_splitted) == 0:
+            return None
+
+        command = to_command(line_splitted[0])
+        if command == 'C_ARITHMETIC':
+            arg1 = line_splitted[0]
             arg2 = None
-            if command == 'C_ARITHMETIC':
-                arg1 = line_splitted[0]
-                writer.write_arithmetic(arg1)
-            else:
-                arg1 = line_splitted[1]
-                arg2 = int(line_splitted[2])
-                writer.write_push_pop(command=command, segment=arg1, index=arg2)
+        else:
+            arg1 = line_splitted[1]
+            arg2 = int(line_splitted[2])
 
+        return ParsedLine(command=command, arg1=arg1, arg2=arg2)
+            
 
 class CodeWriter:
     def __init__(self, output_file):
          self.file = open(output_file, 'w')
+         self.label = 0
 
     def write_arithmetic(self, arithmetic: Arithmetic):
         match arithmetic:
             case 'add':
                 self.file.write(textwrap.dedent(f"""\
                 @SP
-                A=M
-                A=A-1
+                AM=M-1
                 D=M
                 A=A-1
-                M=M+D
-                @SP
-                M=M-1
+                M=D+M
                 """));
             
             case 'sub':
                 self.file.write(textwrap.dedent(f"""\
                 @SP
-                A=M
-                A=A-1
+                AM=M-1
                 D=M
                 A=A-1
                 M=M-D
+                """));
+            
+            case 'gt':
+                self.file.write(textwrap.dedent(f"""\
                 @SP
-                M=M-1
+                AM=M-1
+                D=M
+                A=A-1
+                D=M-D
+                @label.true.{self.label}
+                D;JGT
+                @SP
+                A=M-1
+                M=0
+                @label.end.{self.label}
+                0;JMP
+                (label.true.{self.label})
+                @SP
+                A=M-1
+                M=-1
+                (label.end.{self.label})
+                """));
+                self.label += 1
+
+            case 'lt':
+                self.file.write(textwrap.dedent(f"""\
+                @SP
+                AM=M-1
+                D=M
+                A=A-1
+                D=M-D
+                @label.true.{self.label}
+                D;JLT
+                @SP
+                A=M-1
+                M=0
+                @label.end.{self.label}
+                0;JMP
+                (label.true.{self.label})
+                @SP
+                A=M-1
+                M=-1
+                (label.end.{self.label})
+                """));
+                self.label += 1
+
+            case 'eq':
+                self.file.write(textwrap.dedent(f"""\
+                @SP
+                AM=M-1
+                D=M
+                A=A-1
+                D=M-D
+                @label.true.{self.label}
+                D;JEQ
+                @SP
+                A=M-1
+                M=0
+                @label.end.{self.label}
+                0;JMP
+                (label.true.{self.label})
+                @SP
+                A=M-1
+                M=-1
+                (label.end.{self.label})
+                """));
+                self.label += 1
+
+            case 'neg':
+                self.file.write(textwrap.dedent(f"""\
+                @SP
+                A=M-1
+                M=-M
+                """));
+    
+            case 'and':
+                self.file.write(textwrap.dedent(f"""\
+                @SP
+                AM=M-1
+                D=M
+                A=A-1
+                M=D&M
+                """));
+    
+            case 'or':
+                self.file.write(textwrap.dedent(f"""\
+                @SP
+                AM=M-1
+                D=M
+                A=A-1
+                M=D|M
+                """));
+    
+            case 'not':
+                self.file.write(textwrap.dedent(f"""\
+                @SP
+                A=M-1
+                M=!M
                 """));
 
     def write_push_pop(self, command: Command, segment: Segment, index: int):
-        adds_on_assembly: str = ""
-        segment_pointer: str | None = None
-        match segment:
-            case 'argument':
-                segment_pointer = 'ARG'
-            case 'local':
-                segment_pointer = 'LCL'
-            case 'this':
-                segment_pointer = 'THIS'
-            case 'that':
-                segment_pointer = 'THAT'
-            case 'temp':
-                segment_pointer = '5'
-
-        
         if segment == 'constant':
-            # D = index value
-            adds_on_assembly = textwrap.dedent(f"""\
-            @{index}
-            D=A
-            """)
-
-        else:
-            # A = target memory address & D = value of target address
-            adds_on_assembly = textwrap.dedent(f"""\
-            @{segment_pointer}
-            D=M
-            @{index}
-            A=D+A
-            D=M
-            """)
-
-        match command:
-            case 'C_PUSH':
+            if command == 'C_PUSH':
                 self.file.write(textwrap.dedent(f"""\
-                {adds_on_assembly}
+                @{index}
+                D=A
+                @SP
+                A=M
+                M=D
+                @SP
+                M=M+1
+                """));
+    
+        elif segment == 'temp':
+            if command == 'C_PUSH':
+                self.file.write(textwrap.dedent(f"""\
+                @{5 + index}
+                D=M
                 @SP
                 A=M
                 M=D
@@ -125,27 +205,79 @@ class CodeWriter:
                 M=M+1
                 """));
             
-            case 'C_POP':
+            if command == 'C_POP':
+                 self.file.write(textwrap.dedent(f"""\
+                @SP
+                AM=M-1
+                D=M
+                @{5 + index}
+                A=M
+                M=D
+                """));
+
+        else:
+            if command == 'C_PUSH':
                 self.file.write(textwrap.dedent(f"""\
-                {adds_on_assembly}
-                // keep target memory in temp (R5)
-                @5
+                @{self.__get_address_ref(segment)}
+                D=M
+                @{index}
+                A=D+A
+                D=M
+                @SP
+                A=M
                 M=D
                 @SP
-                M=M-1
-                A=M
+                M=M+1
+                """));
+            
+            if command == 'C_POP':
+                self.file.write(textwrap.dedent(f"""\
+                @{self.__get_address_ref(segment)}
                 D=M
-                @5
+                @{index}
+                D=D+A
+                @label.temp.addr
+                M=D
+                @SP
+                AM=M-1
+                D=M
+                @label.temp.addr
                 A=M
                 M=D
-                """));        
+                """));
+
+    def __get_address_ref(self, segment: Literal['local', 'argument', 'this', 'that']) -> Literal['LCL', 'ARG', 'THIS', 'THAT']:
+        map_ref = {
+            'local': 'LCL',
+            'argument': 'ARG',
+            'this': 'THIS',
+            'that': 'THAT',
+        }
+        return map_ref[segment]
 
     def close(self):
-        self.file.close()
-    
+        self.file.close()        
+
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
         print("Usage: python vm_translator.py <filename>")
     else:
-        parser = Parser(sys.argv[1])
+        input_file_name = sys.argv[1]
+
+        if input_file_name.endswith('.vm'):
+            output_file_name = f'{input_file_name[:-3]}.asm'
+        else:
+            exit(1)
+
+        parser = Parser(input_file_name)
+        writer = CodeWriter(output_file_name)
+
+        while parser.has_more_commands():
+            line = parser.advance()
+            if line is not None:
+                match line.command:
+                    case 'C_ARITHMETIC':
+                        writer.write_arithmetic(arithmetic=line.arg1)
+                    case _:
+                        writer.write_push_pop(command=line.command, segment=line.arg1, index=line.arg2)
