@@ -1,56 +1,61 @@
 from typing import Literal, get_args
 import sys
 import textwrap
+from dataclasses import dataclass
 
 Command = Literal['C_ARITHMETIC', 'C_PUSH', 'C_POP', 'C_LABEL', 'C_GOTO', 'C_IF', 'C_FUNCTION', 'C_RETURN', 'C_CALL']
 Arithmetic = Literal["add", "sub", 'eq', 'lt', 'gt', 'neg', 'and', 'or', 'not']
 
 Segment = Literal['local', 'argument', 'this', 'that', 'constant']
 
-
 def to_command(command: str) -> Command | None:
-    match command:
-        case 'push':
-            return 'C_PUSH'
-        case 'pop':
-            return 'C_POP'
-        case _:
-            if command in set(get_args(Arithmetic)):
-                return 'C_ARITHMETIC'
-            else:
-                return None
-                
+        match command:
+            case 'push':
+                return 'C_PUSH'
+            case 'pop':
+                return 'C_POP'
+            case _:
+                if command in set(get_args(Arithmetic)):
+                    return 'C_ARITHMETIC'
+                else:
+                    return None
+
+@dataclass              
+class ParsedLine:
+    command: Command
+    arg1: str
+    arg2: int | None
+
 
 class Parser:
     def __init__(self, input_file: str):
-        file = open(input_file, 'r')
-        lines = file.readlines()
+        self.file = open(input_file, 'r')
+        self.lines = self.file.readlines()
+        self.cursor = 0
 
-        writer = None;
-        if input_file.endswith('.vm'):
-            writer = CodeWriter(f'{input_file[:-3]}.asm')
-        else:
-            exit(1)
+    def has_more_commands(self) -> bool:
+        return self.cursor < len(self.lines)
 
-        for line in lines:
-            if line.startswith('//'):
-                continue
-            line_splitted: list[str] = line.split()
-            if len(line_splitted) == 0:
-                continue
+    def advance(self) -> ParsedLine | None:
+        line = self.lines[self.cursor]
+        self.cursor += 1;
 
+        if line.startswith('//'):
+            return None
+        line_splitted: list[str] = line.split()
+        if len(line_splitted) == 0:
+            return None
 
-            command = to_command(line_splitted[0])
-            arg1 = None
+        command = to_command(line_splitted[0])
+        if command == 'C_ARITHMETIC':
+            arg1 = line_splitted[0]
             arg2 = None
-            if command == 'C_ARITHMETIC':
-                arg1 = line_splitted[0]
-                writer.write_arithmetic(arg1)
-            else:
-                arg1 = line_splitted[1]
-                arg2 = int(line_splitted[2])
-                writer.write_push_pop(command=command, segment=arg1, index=arg2)
+        else:
+            arg1 = line_splitted[1]
+            arg2 = int(line_splitted[2])
 
+        return ParsedLine(command=command, arg1=arg1, arg2=arg2)
+            
 
 class CodeWriter:
     def __init__(self, output_file):
@@ -189,11 +194,28 @@ class CodeWriter:
                 """));
 
     def close(self):
-        self.file.close()
-    
+        self.file.close()        
+
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
         print("Usage: python vm_translator.py <filename>")
     else:
-        parser = Parser(sys.argv[1])
+        input_file_name = sys.argv[1]
+
+        if input_file_name.endswith('.vm'):
+            output_file_name = f'{input_file_name[:-3]}.asm'
+        else:
+            exit(1)
+
+        parser = Parser(input_file_name)
+        writer = CodeWriter(output_file_name)
+
+        while parser.has_more_commands():
+            line = parser.advance()
+            if line is not None:
+                match line.command:
+                    case 'C_ARITHMETIC':
+                        writer.write_arithmetic(arithmetic=line.arg1)
+                    case _:
+                        writer.write_push_pop(command=line.command, segment=line.arg1, index=line.arg2)
