@@ -1,0 +1,151 @@
+from typing import Literal
+import sys
+import textwrap
+
+Command = Literal['C_ARITHMETIC', 'C_PUSH', 'C_POP', 'C_LABEL', 'C_GOTO', 'C_IF', 'C_FUNCTION', 'C_RETURN', 'C_CALL']
+Arithmetic = Literal["add", "sub"]
+
+Segment = Literal['local', 'argument', 'this', 'that', 'constant']
+
+
+def to_command(command: str) -> Command | None:
+    match command:
+        case 'push':
+            return 'C_PUSH'
+        case 'pop':
+            return 'C_POP'
+        case _:
+            if command in {'add', 'sub'}:
+                return 'C_ARITHMETIC'
+            else:
+                return None
+                
+
+class Parser:
+    def __init__(self, input_file: str):
+        file = open(input_file, 'r')
+        lines = file.readlines()
+
+        writer = None;
+        if input_file.endswith('.vm'):
+            writer = CodeWriter(f'{input_file[:-3]}.asm')
+        else:
+            exit(1)
+
+        for line in lines:
+            if line.startswith('//'):
+                continue
+            line_splitted: list[str] = line.split()
+            if len(line_splitted) == 0:
+                continue
+
+            command = to_command(line_splitted[0])
+            arg1 = None
+            arg2 = None
+            if command == 'C_ARITHMETIC':
+                arg1 = line_splitted[0]
+                writer.write_arithmetic(arg1)
+            else:
+                arg1 = line_splitted[1]
+                arg2 = int(line_splitted[2])
+                writer.write_push_pop(command=command, segment=arg1, index=arg2)
+
+
+class CodeWriter:
+    def __init__(self, output_file):
+         self.file = open(output_file, 'w')
+
+    def write_arithmetic(self, arithmetic: Arithmetic):
+        match arithmetic:
+            case 'add':
+                self.file.write(textwrap.dedent(f"""\
+                @SP
+                A=M
+                A=A-1
+                D=M
+                A=A-1
+                M=M+D
+                @SP
+                M=M-1
+                """));
+            
+            case 'sub':
+                self.file.write(textwrap.dedent(f"""\
+                @SP
+                A=M
+                A=A-1
+                D=M
+                A=A-1
+                M=M-D
+                @SP
+                M=M-1
+                """));
+
+    def write_push_pop(self, command: Command, segment: Segment, index: int):
+        adds_on_assembly: str = ""
+        segment_pointer: str | None = None
+        match segment:
+            case 'argument':
+                segment_pointer = 'ARG'
+            case 'local':
+                segment_pointer = 'LCL'
+            case 'this':
+                segment_pointer = 'THIS'
+            case 'that':
+                segment_pointer = 'THAT'
+            case 'temp':
+                segment_pointer = '5'
+
+        
+        if segment == 'constant':
+            # D = index value
+            adds_on_assembly = textwrap.dedent(f"""\
+            @{index}
+            D=A
+            """)
+
+        else:
+            # A = target memory address & D = value of target address
+            adds_on_assembly = textwrap.dedent(f"""\
+            @{segment_pointer}
+            D=M
+            @{index}
+            A=D+A
+            D=M
+            """)
+
+        match command:
+            case 'C_PUSH':
+                self.file.write(textwrap.dedent(f"""\
+                {adds_on_assembly}
+                @SP
+                A=M
+                M=D
+                @SP
+                M=M+1
+                """));
+            
+            case 'C_POP':
+                self.file.write(textwrap.dedent(f"""\
+                {adds_on_assembly}
+                // keep target memory in temp (R5)
+                @5
+                M=D
+                @SP
+                M=M-1
+                A=M
+                D=M
+                @5
+                A=M
+                M=D
+                """));        
+
+    def close(self):
+        self.file.close()
+    
+
+if __name__ == '__main__':
+    if len(sys.argv) < 2:
+        print("Usage: python vm_translator.py <filename>")
+    else:
+        parser = Parser(sys.argv[1])
