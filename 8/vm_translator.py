@@ -61,7 +61,7 @@ class Parser:
         if command is None:
             return None
         
-        if command is 'C_ARITHMETIC':
+        if command == 'C_ARITHMETIC':
             arg1 = line_splitted[0]
             arg2 = None
 
@@ -69,7 +69,7 @@ class Parser:
             arg1 = line_splitted[1]
             arg2 = None
 
-        elif command is 'C_RETURN':
+        elif command == 'C_RETURN':
             arg1 = None
             arg2 = None
 
@@ -331,7 +331,7 @@ class CodeWriter:
         self.file.write(textwrap.dedent(f"""\
         @LCL
         D=M
-        @FRAME
+        @label.temp.FRAME
         M=D              
         """));
         self.write_push_pop('C_POP', 'argument', 0)
@@ -341,10 +341,10 @@ class CodeWriter:
         @SP
         M=D+1
         """));
-        for i, addr_ref in enumerate(['THAT', 'THIS', 'ARG', 'LCL', 'RET']):
-            offset = i + 1
+        for i, addr_ref in enumerate(['THAT', 'THIS', 'ARG', 'LCL', 'label.temp.RET']):
+            offset: int = i + 1
             self.file.write(textwrap.dedent(f"""\
-            @FRAME
+            @label.temp.FRAME
             D=M
             @{offset}
             A=D-A
@@ -353,10 +353,10 @@ class CodeWriter:
             M=D
             """));
         self.file.write(textwrap.dedent(f"""\
-            @RET
-            A=M
-            0;JMP
-            """));
+        @label.temp.RET
+        A=M
+        0;JMP
+        """));
 
 
     def write_function(self, function_name: str, num_locals: int):
