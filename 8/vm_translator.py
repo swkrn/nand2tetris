@@ -21,6 +21,10 @@ def to_command(command: str) -> Command | None:
                 return 'C_GOTO'
             case 'if-goto':
                 return 'C_IF'
+            case 'function':
+                return 'C_FUNCTION'
+            case 'return':
+                return 'C_RETURN'
             case _:
                 if command in set(get_args(Arithmetic)):
                     return 'C_ARITHMETIC'
@@ -57,12 +61,16 @@ class Parser:
         if command is None:
             return None
         
-        if command in 'C_ARITHMETIC':
+        if command is 'C_ARITHMETIC':
             arg1 = line_splitted[0]
             arg2 = None
 
         elif command in {'C_LABEL', 'C_GOTO', 'C_IF'}:
             arg1 = line_splitted[1]
+            arg2 = None
+
+        elif command is 'C_RETURN':
+            arg1 = None
             arg2 = None
 
         else:
@@ -320,10 +328,45 @@ class CodeWriter:
         pass
 
     def write_return(self):
-        pass
+        self.file.write(textwrap.dedent(f"""\
+        @LCL
+        D=M
+        @FRAME
+        M=D              
+        """));
+        self.write_push_pop('C_POP', 'argument', 0)
+        self.file.write(textwrap.dedent(f"""\
+        @ARG
+        D=M
+        @SP
+        M=D+1
+        """));
+        for i, addr_ref in enumerate(['THAT', 'THIS', 'ARG', 'LCL', 'RET']):
+            offset = i + 1
+            self.file.write(textwrap.dedent(f"""\
+            @FRAME
+            D=M
+            @{offset}
+            A=D-A
+            D=M
+            @{addr_ref}
+            M=D
+            """));
+        self.file.write(textwrap.dedent(f"""\
+            @RET
+            A=M
+            0;JMP
+            """));
 
-    def write_function(self):
-        pass
+
+    def write_function(self, function_name: str, num_locals: int):
+        self.write_label(function_name)
+        for i in range(num_locals):
+            self.write_push_pop('C_PUSH', 'constant', 0)
+
+    def write_empty_line(self):
+        self.file.write('\n')
+        
 
     def __get_address_ref(self, segment: Literal['local', 'argument', 'this', 'that']) -> Literal['LCL', 'ARG', 'THIS', 'THAT']:
         map_ref = {
@@ -366,5 +409,11 @@ if __name__ == '__main__':
                         writer.write_goto(label=line.arg1)
                     case 'C_IF':
                         writer.write_if(label=line.arg1)
+                    case 'C_FUNCTION':
+                        writer.write_function(function_name=line.arg1, num_locals=line.arg2)
+                    case 'C_RETURN':
+                        writer.write_return()
+
+                writer.write_empty_line()
 
         writer.close()
