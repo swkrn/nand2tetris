@@ -15,6 +15,10 @@ def to_command(command: str) -> Command | None:
                 return 'C_PUSH'
             case 'pop':
                 return 'C_POP'
+            case 'goto':
+                return 'C_GOTO'
+            case 'if-goto':
+                return 'C_IF'
             case _:
                 if command in set(get_args(Arithmetic)):
                     return 'C_ARITHMETIC'
@@ -51,9 +55,10 @@ class Parser:
         if command is None:
             return None
         
-        if command == 'C_ARITHMETIC':
+        if command in {'C_ARITHMETIC', 'C_GOTO', 'C_IF'}:
             arg1 = line_splitted[0]
             arg2 = None
+
         else:
             arg1 = line_splitted[1]
             arg2 = int(line_splitted[2])
@@ -66,6 +71,15 @@ class CodeWriter:
          self.file = open(output_file_path, 'w')
          self.vm_class_name =  re.split(r"[\\/]", output_file_path)[-1].removesuffix('.asm')
          self.label = 0
+
+    def write_init(self):
+        # TODO: complete implamentation
+        self.file.write(textwrap.dedent(f"""\
+        @256
+        D=A
+        @SP
+        M=D                                
+        """));
 
     def write_arithmetic(self, arithmetic: Arithmetic):
         match arithmetic:
@@ -276,6 +290,35 @@ class CodeWriter:
                 M=D
                 """));
 
+    def write_label(self, label: str):
+        self.file.write(textwrap.dedent(f"""\
+        ({label})             
+        """));
+    
+    def write_goto(self, label: str):
+        self.file.write(textwrap.dedent(f"""\
+        @{label}
+        0;JMP
+        """));
+    
+    def write_if(self, label: str):
+        self.file.write(textwrap.dedent(f"""\
+        @SP
+        AM=M-1
+        D=M
+        @{label}
+        D;JNE
+        """));
+    
+    def write_call(self):
+        pass
+
+    def write_return(self):
+        pass
+
+    def write_function(self):
+        pass
+
     def __get_address_ref(self, segment: Literal['local', 'argument', 'this', 'that']) -> Literal['LCL', 'ARG', 'THIS', 'THAT']:
         map_ref = {
             'local': 'LCL',
@@ -309,7 +352,11 @@ if __name__ == '__main__':
                 match line.command:
                     case 'C_ARITHMETIC':
                         writer.write_arithmetic(arithmetic=line.arg1)
-                    case _:
+                    case 'C_PUSH' | 'C_POP':
                         writer.write_push_pop(command=line.command, segment=line.arg1, index=line.arg2)
+                    case 'C_GOTO':
+                        writer.write_goto(label=line.arg1)
+                    case 'C_IF':
+                        writer.write_if(label=line.arg1)
 
         writer.close()
