@@ -15,6 +15,8 @@ def to_command(command: str) -> Command | None:
                 return 'C_PUSH'
             case 'pop':
                 return 'C_POP'
+            case 'label':
+                return 'C_LABEL'
             case 'goto':
                 return 'C_GOTO'
             case 'if-goto':
@@ -55,8 +57,12 @@ class Parser:
         if command is None:
             return None
         
-        if command in {'C_ARITHMETIC', 'C_GOTO', 'C_IF'}:
+        if command in 'C_ARITHMETIC':
             arg1 = line_splitted[0]
+            arg2 = None
+
+        elif command in {'C_LABEL', 'C_GOTO', 'C_IF'}:
+            arg1 = line_splitted[1]
             arg2 = None
 
         else:
@@ -354,6 +360,8 @@ if __name__ == '__main__':
                         writer.write_arithmetic(arithmetic=line.arg1)
                     case 'C_PUSH' | 'C_POP':
                         writer.write_push_pop(command=line.command, segment=line.arg1, index=line.arg2)
+                    case 'C_LABEL':
+                        writer.write_label(label=line.arg1)
                     case 'C_GOTO':
                         writer.write_goto(label=line.arg1)
                     case 'C_IF':

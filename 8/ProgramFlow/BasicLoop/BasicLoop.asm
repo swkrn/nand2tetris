@@ -17,6 +17,7 @@ D=M
 @label.temp.addr
 A=M
 M=D
+(LOOP)             
 @ARG
 D=M
 @0
@@ -101,7 +102,7 @@ M=M+1
 @SP
 AM=M-1
 D=M
-@if-goto
+@LOOP
 D;JNE
 @LCL
 D=M
