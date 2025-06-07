@@ -2,7 +2,7 @@ from typing import Literal, get_args
 import sys
 import textwrap
 from dataclasses import dataclass
-import re
+from pathlib import Path
 
 Command = Literal['C_ARITHMETIC', 'C_PUSH', 'C_POP', 'C_LABEL', 'C_GOTO', 'C_IF', 'C_FUNCTION', 'C_RETURN', 'C_CALL']
 Arithmetic = Literal["add", "sub", 'eq', 'lt', 'gt', 'neg', 'and', 'or', 'not']
@@ -25,6 +25,8 @@ def to_command(command: str) -> Command | None:
                 return 'C_FUNCTION'
             case 'return':
                 return 'C_RETURN'
+            case 'call':
+                return 'C_CALL'
             case _:
                 if command in set(get_args(Arithmetic)):
                     return 'C_ARITHMETIC'
@@ -80,20 +82,22 @@ class Parser:
         return ParsedLine(command=command, arg1=arg1, arg2=arg2)
             
 
+WriteMode = Literal['w', 'a']
+
 class CodeWriter:
-    def __init__(self, output_file_path: str):
-         self.file = open(output_file_path, 'w')
-         self.vm_class_name =  re.split(r"[\\/]", output_file_path)[-1].removesuffix('.asm')
+    def __init__(self, output_file_path: str, vm_class_name: str | None, write_mode: WriteMode):
+         self.file = open(output_file_path, write_mode)
+         self.vm_class_name =  vm_class_name
          self.label = 0
 
     def write_init(self):
-        # TODO: complete implamentation
         self.file.write(textwrap.dedent(f"""\
         @256
         D=A
         @SP
         M=D                                
         """));
+        self.write_call('Sys.init', 0)
 
     def write_arithmetic(self, arithmetic: Arithmetic):
         match arithmetic:
@@ -255,7 +259,7 @@ class CodeWriter:
         elif segment == 'static':
             if command == 'C_PUSH':
                 self.file.write(textwrap.dedent(f"""\
-                @{self.vm_class_name}.{index}
+                @{self.vm_class_name}.static.{index}
                 D=M
                 @SP
                 A=M
@@ -269,7 +273,7 @@ class CodeWriter:
                 @SP
                 AM=M-1
                 D=M
-                @{self.vm_class_name}.{index}
+                @{self.vm_class_name}.static.{index}
                 M=D
                 """));
 
@@ -324,8 +328,66 @@ class CodeWriter:
         D;JNE
         """));
     
-    def write_call(self):
-        pass
+    def write_call(self, function_name: str, n_args: int):
+        self.file.write(textwrap.dedent(f"""\
+        @{function_name}.ret.{self.label}
+        D=A
+        @SP
+        A=M
+        M=D
+        @SP
+        M=M+1
+
+        @LCL
+        D=M
+        @SP
+        A=M
+        M=D
+        @SP
+        M=M+1
+        
+        @ARG
+        D=M
+        @SP
+        A=M
+        M=D
+        @SP
+        M=M+1
+                                        
+        @THIS
+        D=M
+        @SP
+        A=M
+        M=D
+        @SP
+        M=M+1
+                                        
+        @THAT
+        D=M
+        @SP
+        A=M
+        M=D
+        @SP
+        M=M+1
+                                        
+        @SP
+        D=M
+        @{5 + n_args}
+        D=D-A
+        @ARG
+        M=D
+
+        @SP
+        D=M
+        @LCL
+        M=D
+
+        @{function_name}
+        0;JMP
+
+        ({function_name}.ret.{self.label})
+        """));
+        self.label += 1
 
     def write_return(self):
         self.file.write(textwrap.dedent(f"""\
@@ -334,6 +396,15 @@ class CodeWriter:
         @label.temp.FRAME
         M=D              
         """));
+        self.file.write(textwrap.dedent(f"""\
+        @label.temp.FRAME
+        D=M
+        @5
+        A=D-A
+        D=M
+        @label.temp.RET
+        M=D
+        """));
         self.write_push_pop('C_POP', 'argument', 0)
         self.file.write(textwrap.dedent(f"""\
         @ARG
@@ -341,7 +412,7 @@ class CodeWriter:
         @SP
         M=D+1
         """));
-        for i, addr_ref in enumerate(['THAT', 'THIS', 'ARG', 'LCL', 'label.temp.RET']):
+        for i, addr_ref in enumerate(['THAT', 'THIS', 'ARG', 'LCL']):
             offset: int = i + 1
             self.file.write(textwrap.dedent(f"""\
             @label.temp.FRAME
@@ -361,8 +432,12 @@ class CodeWriter:
 
     def write_function(self, function_name: str, num_locals: int):
         self.write_label(function_name)
-        for i in range(num_locals):
+        for _ in range(num_locals):
             self.write_push_pop('C_PUSH', 'constant', 0)
+
+
+    def write_comment(self, comment: str):
+        self.file.write(f'// {comment}\n')
 
     def write_empty_line(self):
         self.file.write('\n')
@@ -380,40 +455,62 @@ class CodeWriter:
     def close(self):
         self.file.close()        
 
+def write_init(output_file_path: str):
+    writer = CodeWriter(output_file_path=output_file_path, vm_class_name=None, write_mode='w')
+    writer.write_init()
+    writer.close()
+    
+
+def write_asm(input_file_path: str, output_file_path: str, write_mode: WriteMode):
+    parser = Parser(input_file_path)
+    writer = CodeWriter(output_file_path, vm_class_name=input_file_path.split('/')[-1].split('.')[0], write_mode=write_mode)
+
+    while parser.has_more_commands():
+        line = parser.advance()
+        if line is not None:
+            writer.write_comment(line)
+            match line.command:
+                case 'C_ARITHMETIC':
+                    writer.write_arithmetic(arithmetic=line.arg1)
+                case 'C_PUSH' | 'C_POP':
+                    writer.write_push_pop(command=line.command, segment=line.arg1, index=line.arg2)
+                case 'C_LABEL':
+                    writer.write_label(label=line.arg1)
+                case 'C_GOTO':
+                    writer.write_goto(label=line.arg1)
+                case 'C_IF':
+                    writer.write_if(label=line.arg1)
+                case 'C_FUNCTION':
+                    writer.write_function(function_name=line.arg1, num_locals=line.arg2)
+                case 'C_RETURN':
+                    writer.write_return()
+                case 'C_CALL':
+                    writer.write_call(function_name=line.arg1, n_args=line.arg2)
+            writer.write_empty_line()
+    writer.close()
+
 
 if __name__ == '__main__':
     if len(sys.argv) != 2:
         print("Usage: python vm_translator.py <filename>")
     else:
         input_file_path = sys.argv[1]
+        path = Path(input_file_path)
 
-        if input_file_path.endswith('.vm'):
-            output_file_path = f'{input_file_path[:-3]}.asm'
+        if path.is_file():
+            if input_file_path.endswith('.vm'):
+                output_file_path = input_file_path[:-3] + '.asm'
+                write_init(output_file_path=output_file_path)
+                write_asm(input_file_path=input_file_path, output_file_path=output_file_path, write_mode='a')
+            else:
+                exit(1)
+
+        elif path.is_dir():
+            output_file_path = str(path) + '/' + path.name + '.asm'
+            write_init(output_file_path=output_file_path)
+            for p in path.rglob("*"):
+                if p.is_file() and p.suffix == '.vm':
+                    write_asm(input_file_path=p.as_posix(), output_file_path=output_file_path, write_mode='a')
+
         else:
-            exit(1)
-
-        parser = Parser(input_file_path)
-        writer = CodeWriter(output_file_path)
-
-        while parser.has_more_commands():
-            line = parser.advance()
-            if line is not None:
-                match line.command:
-                    case 'C_ARITHMETIC':
-                        writer.write_arithmetic(arithmetic=line.arg1)
-                    case 'C_PUSH' | 'C_POP':
-                        writer.write_push_pop(command=line.command, segment=line.arg1, index=line.arg2)
-                    case 'C_LABEL':
-                        writer.write_label(label=line.arg1)
-                    case 'C_GOTO':
-                        writer.write_goto(label=line.arg1)
-                    case 'C_IF':
-                        writer.write_if(label=line.arg1)
-                    case 'C_FUNCTION':
-                        writer.write_function(function_name=line.arg1, num_locals=line.arg2)
-                    case 'C_RETURN':
-                        writer.write_return()
-
-                writer.write_empty_line()
-
-        writer.close()
+            print('Path does not exist.');
