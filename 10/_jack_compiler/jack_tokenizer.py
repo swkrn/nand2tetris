@@ -1,6 +1,9 @@
-from typing import List, Literal, Any
+from typing import List, Literal, Any, cast
 from dataclasses import dataclass
 import sys
+import xml.etree.ElementTree as ET
+
+
 
 
 
@@ -131,3 +134,16 @@ class JackTokenizer():
         self.start = 0
         self.current = 0
         self.tokens = []
+
+
+def xml_to_tokens(xml: str) -> List[Token]:
+    tokens: List[Token] = []
+    root = ET.fromstring(xml)
+    for token in root:
+        t = cast(TokenType, token.tag)
+
+        assert token.text is not None
+        value = token.text[1: -1]
+        
+        tokens.append(Token(t, value))
+    return tokens
