@@ -7,7 +7,7 @@ import xml.etree.ElementTree as ET
 
 
 
-TokenType = Literal['keyword', 'symbol', 'identifier', 'intConstant', 'stringConstant']
+TokenType = Literal['keyword', 'symbol', 'identifier', 'integerConstant', 'stringConstant']
 
 KEYWORDS = {'class', 'method', 'function', 'field', 'static', 'var', 'int', 'char', 'boolean', 'void', 'true', 'false', 'null', 'this', 'let', 'do', 'if', 'else', 'while', 'return'}
 SYMBOLS = {'{', '}', '(', ')', '[', ']', '.', ',', ';', '+', '-', '*', '/', '&', '|', '<', '>', '=', '~'}
@@ -103,7 +103,7 @@ class JackTokenizer():
         while (self.__peek().isdigit()):
             self.__advance()
 
-        return self.__add_token('intConstant', int(self.code[self.start: self.current]))
+        return self.__add_token('integerConstant', int(self.code[self.start: self.current]))
 
 
     def __exec_string(self) -> Token:
@@ -144,6 +144,6 @@ def xml_to_tokens(xml: str) -> List[Token]:
 
         assert token.text is not None
         value = token.text[1: -1]
-        
+
         tokens.append(Token(t, value))
     return tokens

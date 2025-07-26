@@ -6,6 +6,20 @@ import textwrap
 import xml.dom.minidom as XML
 
 
+def escape_xml(value: str | int | None) -> str | int:
+    if isinstance(value, int):
+        return value
+    if value is None:
+        return ''
+    return (
+        value.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;")
+            .replace("'", "&apos;")
+    )
+
+
 class CompilationEngine():
     tokens: List[Token]
     current: int
@@ -21,7 +35,8 @@ class CompilationEngine():
     def get_compiled_xml(self) -> str:
         xml =  self.compile_class()
         print(xml, sep='\n')
-        pretty_xml = XML.parseString(xml.replace('\n', '')).toprettyxml(indent="  ")
+        xml = xml.replace('\n', '')
+        pretty_xml = XML.parseString(xml.replace('', '')).toprettyxml(indent="  ")
         return pretty_xml;
 
 
@@ -29,7 +44,7 @@ class CompilationEngine():
         xml = '<class>\n'
        
         xml += self.__consume(Token('keyword', 'class'), "incorrect class")
-        xml += self.compile_class_name()
+        xml += self.compile_identifier()
         xml += self.__consume(Token('symbol', '{'), "incorrect class")
 
         # classVarDec
@@ -46,7 +61,9 @@ class CompilationEngine():
     
 
     def compile_class_var_dec(self) -> str:
-        xml = '<varDec>\n'
+        xml = ''
+        has_class_var_dec: bool = False
+
         while True:
             if self.__check_token(Token('keyword', 'static')):
                 xml += self.__consume(Token('keyword', 'static'), "incorrect class var dec")
@@ -56,17 +73,21 @@ class CompilationEngine():
             
             else:
                 break;
+            
+            has_class_var_dec = True
 
             xml += self.compile_type()
-            xml += self.compile_var_name()
+            xml += self.compile_identifier()
 
             while self.__check_token(Token('symbol', ',')):
                 xml += self.__consume(Token('symbol', ','), "incorrect class var dec")
-                xml += self.compile_var_name()
+                xml += self.compile_identifier()
             
             xml += self.__consume(Token('symbol', ';'), "incorrect class var dec")
        
-        xml += '</varDec>\n'
+        if has_class_var_dec:
+            xml = f'<varDec>\n{xml}</varDec>>\n'
+
         return xml
     
 
@@ -91,18 +112,20 @@ class CompilationEngine():
             elif self.__is_type():
                 self.compile_type()
 
-            xml += self.compile_subroutine_name()
+            xml += self.compile_identifier()
 
             xml += self.__consume(Token('symbol', '('), "incorrect subroutine")
             xml += self.compile_parameter_list()
             xml += self.__consume(Token('symbol', ')'), "incorrect subroutine")
 
             # subroutineBody
+            xml += '<subroutineBody>\n'
             xml += self.__consume(Token('symbol', '{'), "incorrect subroutine body")
             while self.__check_token(Token('keyword', 'var')):
                 xml += self.compile_var_dec()
-            self.compile_statements()
+            xml += self.compile_statements()
             xml += self.__consume(Token('symbol', '}'), "incorrect subroutine body")
+            xml += '</subroutineBody>\n'
         
         xml += '</subroutineDec>\n'
         return xml
@@ -112,13 +135,13 @@ class CompilationEngine():
         xml = '<parameterList>\n'
         if self.__is_type():
             xml += self.compile_type()
-            xml += self.compile_var_name()
+            xml += self.compile_identifier()
 
         while True:
             if self.__check_token(Token('symbol', ',')):
                 xml += self.__consume(Token('symbol', ','), 'incorrect parameter list')
                 xml += self.compile_type()
-                xml += self.compile_var_name()
+                xml += self.compile_identifier()
             else:
                 break               
 
@@ -132,11 +155,11 @@ class CompilationEngine():
         xml += '<varDec>\n'
         xml += self.__consume(Token('keyword', 'var'), 'incorrect var dec')
         xml += self.compile_type()
-        xml += self.compile_var_name()
+        xml += self.compile_identifier()
 
         while self.__check_token(Token('symbol', ',')):
             xml += self.__consume(Token('symbol', ','), 'incorrect var dec')
-            xml += self.compile_var_name()
+            xml += self.compile_identifier()
 
         xml += self.__consume(Token('symbol', ';'), 'incorrect var dec')
         xml += '</varDec>\n'
@@ -152,45 +175,53 @@ class CompilationEngine():
                 xml += self.compile_let()
                 continue
             # if
-            if self.__check_token(Token('keyword', 'if')):
+            elif self.__check_token(Token('keyword', 'if')):
                 xml +=  self.compile_if()
                 continue
             # while
-            if self.__check_token(Token('keyword', 'while')):
+            elif self.__check_token(Token('keyword', 'while')):
                 xml += self.compile_while()
                 continue
             # do
-            if self.__check_token(Token('keyword', 'do')):
+            elif self.__check_token(Token('keyword', 'do')):
                 xml += self.compile_do()
                 continue
             # return
-            if self.__check_token(Token('keyword', 'return')):
+            elif self.__check_token(Token('keyword', 'return')):
                 xml += self.comile_return()
                 continue
+
+            else:
+                self.__print_error(f'incorrect statements - token[{self.current}]: {self.__peek()}')
 
         xml += '</statements>\n'
         return xml
 
 
     def compile_do(self) -> str:
-        return '- TODO\n'
+        xml = '<doStatement>\n'
+        xml += self.__consume(Token('keyword', 'do'), 'in correct do statement')
+        xml += self.compile_subroutine_call()
+        xml += self.__consume(Token('symbol', ';'), 'incorrect do statement')
+        xml += '</doStatement>\n'
+        return xml
 
 
     def compile_let(self) -> str:   
         xml = '<letStatement>\n'
 
-        xml += self.__consume(Token('keyword', 'let'), "incorrect let statement")
+        xml += self.__consume(Token('keyword', 'let'), "incorrect let statement 1")
 
-        xml += self.compile_var_name()
+        xml += self.compile_identifier()
 
         if self.__check_token(Token('symbol', '[')):
-            xml += self.__consume(Token('symbol', '['), "incorrect let statement")
+            xml += self.__consume(Token('symbol', '['), "incorrect let statement 2")
             xml += self.compile_expression()
-            xml += self.__consume(Token('symbol', ']'), "incorrect let statement")
+            xml += self.__consume(Token('symbol', ']'), "incorrect let statement 3")
 
-        xml += self.__consume(Token('symbol', '='), "incorrect let statement")
+        xml += self.__consume(Token('symbol', '='), "incorrect let statement 4")
         xml += self.compile_expression()
-        xml += self.__consume(Token('symbol', ';'), "incorrect let statement")
+        xml += self.__consume(Token('symbol', ';'), "incorrect let statement 5")
 
         xml += '</letStatement>\n'
         return xml
@@ -266,7 +297,7 @@ class CompilationEngine():
                 xml += self.__consume(Token('symbol', '*'), 'incorrect expression')
 
             elif self.__check_token(Token('symbol', '/')):
-                xml += self.__consume(Token('symbol', '*'), 'incorrect expression')
+                xml += self.__consume(Token('symbol', '/'), 'incorrect expression')
 
             elif self.__check_token(Token('symbol', '&')):
                 xml += self.__consume(Token('symbol', '&'), 'incorrect expression')
@@ -288,28 +319,80 @@ class CompilationEngine():
 
             xml += self.compile_term()
 
-        xml += '<expression>\n'
+        xml += '</expression>\n'
         return xml
 
 
     def compile_term(self) -> str:
-        return '- TODO\n'
+        xml = '<term>\n'
+        # intergerConstant, stringConstant, keywordConstant
+        if self.__peek().type in ['integerConstant', 'stringConstant'] \
+            or (self.__peek().type == 'keyword' and self.__peek().value in ['true', 'false', 'null', 'this']):
+            token = self.__advance()
+            xml += f'<{token.type}> {escape_xml(token.value)} </{token.type}>'
+
+        # subroutineCall
+        elif self.__peek_next().type == 'symbol' and self.__peek_next().value in ['.', '(']:
+            xml += self.compile_subroutine_call()
+
+        # varName | varName '[' expression ']'
+        elif self.__peek().type == 'identifier':
+            xml += self.compile_identifier()
+            if self.__check_token(Token('symbol', '[')):
+                xml += self.__consume(Token('symbol', '['), "incorrect let statement")
+                xml += self.compile_expression()
+                xml += self.__consume(Token('symbol', ']'), "incorrect let statement")    
+
+        # '(' expression ')'
+        elif self.__check_token(Token('symbol', '(')):
+            xml += self.__consume(Token('symbol', '('), 'incorrect term')
+            xml += self.compile_expression()
+            xml += self.__consume(Token('symbol', ')'), 'incorrect term')
+
+        # unaryOp term
+        elif self.__peek().type == 'symbol' and self.__peek().value in ['-', '~']:
+            token = self.__advance()
+            xml += f'<{token.type}> {escape_xml(token.value)} </{token.type}>'
+            xml += self.compile_term()
+        
+        else:           
+            self.__print_error(f'incorrect term - token[{self.current}]: {self.__peek()}')
+
+        xml += '</term>\n'
+        return xml
 
 
     def compile_expression_list(self) -> str:
-        return '- TODO\n'
+        xml = '<expressionList>\n'
+
+        if not self.__check_token(Token('symbol', ')')):
+            xml += self.compile_expression()
+            while self.__check_token(Token('symbol', ',')):
+                xml += self.__consume(Token('symbol', ','), 'incorrect expression list')
+                xml += self.compile_expression()
+                
+        xml += '</expressionList>\n'
+        return xml
     
 
-    def compile_class_name(self) -> str:
-        return self.__compile_identifier('className')
-    
+    def compile_subroutine_call(self) -> str:
+        xml = ''
 
-    def compile_var_name(self) -> str:
-        return self.__compile_identifier('varName')
-    
+        xml += self.compile_identifier()
 
-    def compile_subroutine_name(self) -> str:
-        return self.__compile_identifier('subroutineName')
+        if self.__check_token(Token('symbol', '(')):
+            xml += self.__consume(Token('symbol', '('), 'incorrect subroutine call')
+            xml += self.compile_expression_list()
+            xml += self.__consume(Token('symbol', ')'), 'incorrect subroutine call')
+        
+        elif self.__check_token(Token('symbol', '.')):
+            xml += self.__consume(Token('symbol', '.'), 'incorrect subroutine call')
+            xml += self.compile_identifier()
+            xml += self.__consume(Token('symbol', '('), 'incorrect subroutine call')
+            xml += self.compile_expression_list()
+            xml += self.__consume(Token('symbol', ')'), 'incorrect subroutine call')
+
+        return xml
     
 
     def compile_type(self) -> str:
@@ -324,18 +407,18 @@ class CompilationEngine():
             xml += self.__consume(Token('keyword', 'boolean'), "incorrect type")
 
         else:
-            xml += self.compile_class_name()
+            xml += self.compile_identifier()
 
         return xml
     
 
-    def __compile_identifier(self, key: str) -> str:
+    def compile_identifier(self) -> str:
         xml = ''
         if self.__check_token_type('identifier'):
             token = self.__advance()
-            xml += f'<{key}>{token.value}</{key}>\n'
+            xml += f'<identifier> {escape_xml(token.value)} </identifier>\n'
         else:
-            self.__print_error(f"! incorrect {key} name")
+            self.__print_error(f"! incorrect identifier")
         return xml
 
 
@@ -343,7 +426,7 @@ class CompilationEngine():
         if not self.__check_token(token):
             self.__print_error(f"! Error: expected: {token}, actual: {self.__peek()} - {error}")
         self.current += 1
-        return f'<{token.type}>{token.value}</{token.type}>\n'
+        return f'<{token.type}> {escape_xml(token.value)} </{token.type}>\n'
             
 
     def __has_next(self) -> bool:
@@ -352,6 +435,10 @@ class CompilationEngine():
 
     def __peek(self) -> Token:
         return self.tokens[self.current]
+    
+
+    def __peek_next(self) -> Token:
+        return self.tokens[self.current + 1]
     
     
     def __check_token(self, token: Token) -> bool:
@@ -375,7 +462,8 @@ class CompilationEngine():
     
 
     def __print_error(self, error: str):
-        print(error)
+        raise ValueError(error)
+        # print(error)
 
 
     def __with_indent(self, xml: str) -> str:
